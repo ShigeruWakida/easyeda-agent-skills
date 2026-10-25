@@ -50,6 +50,8 @@ pwsh -File <skill>/scripts/bridge-ctl.ps1 stop     # 停止。CORS が * で認�
 | `create-project.mjs <名前> [--yes]` | プロジェクトを作って開き、回路図ページを開く（§4 の回避策）。`--yes` なしは計画の表示だけ | `--yes` のとき作る |
 | `verify-open-project.mjs [--place C番号] [--delete]` | 開いているプロジェクトの回路図ページを開き、LCSC 番号の部品を 1 個置いてピン座標を読む | `--place` のとき置く |
 | `test-create-project.mjs [--yes] [teamUuid]` | 公開 API の createProject が直ったかの再試験（新しい版で使う） | `--yes` のとき作る |
+| `export-sch.mjs png\|svg\|netlist <出力>` | 回路図の PNG・SVG、ネットリスト（EasyEDA の JSON）を書き出す。接続の照合はネットリストで行う | しない |
+| `screenshot.mjs <出力.png> [--region L R T B]` | 開いている文書の画面を PNG にする | しない（表示の拡大縮小は変わる） |
 | `bridge.mjs` | 中継サーバーへの送信（`execute(code)`）と結果の保存。ほかのスクリプトから import | — |
 
 結果は `EASYEDA_LOG_DIR`（無ければ一時フォルダの `easyeda-logs`）に JSON で残る。
@@ -69,6 +71,23 @@ pwsh -File <skill>/scripts/bridge-ctl.ps1 stop     # 停止。CORS が * で認�
 - **削除：** 公開 API の `deleteProject` は何もしない。内部 API `POST /api/client/deleteProject {uuid, path}` で消える（元に戻せない。
   人の了承を得てから。開いていないプロジェクトだけ）。
 - 上流の手引き（guide/cli.md）の CLI と `.eprj3` は EasyEDA Pro v4.1.60 以上が前提で、2026-10-25 時点で v4 は公開されていない。
+
+## 4.1 回路図を API で描くときの注意（2026-10-25、3.2.209 で確認）
+
+- **座標**：単位 10 mil、Y は上が正。A4 の図枠は 1170×825。`modifySchematicPageTitleBlock` の `Page Size` を変えても枠の大きさは変わらない（表示の文字だけ）。
+- **記号・ポートの回転（反時計回り）**：接地記号 0＝下、90＝左、180＝上、270＝右。電源記号 0＝上、90＝右、180＝下、270＝左。
+  ネットポート 0＝右に伸びる、90＝下、180＝左、270＝上。
+- **ピンの向き**：`getAllPinsByPrimitiveId` の `rotation` が外向き（0＝右、90＝上、180＝左、270＝下）。線はこの向きに引く。
+- **線のネット名**：`sch_PrimitiveWire.create(line, net)` で名前を付けると、線の上に名前が表示される。名前なしで、先にネットポートや記号を
+  置いてから線を引けば、ネットはラベルから決まる（線の `getState_Net()` は空のまま。接続はネットリストで確かめる）。
+- **線やラベルが隣のピンに触れると、そのネットにつながる**（ネットリストで INP が GND になった例）。引いた後は必ず
+  `export-sch.mjs netlist` で全ピンを照合する。
+- **回転の変更はすぐには反映されない**ことがある。`modify` の後はピンの位置を読み直す（計算でずらさない）。
+- **部品番号（designator）の `modify` が効かないことがある**（U1 にしたのに U2 のまま）。書き込んだ後に読み戻して確かめ、違えば書き直す。
+- **中継サーバーは 1 回の要求を 30 秒で打ち切る**。部品の配置や線は 10〜25 個ずつに分ける。
+- **ページを短い間隔で次々に開くと、拡張機能の接続が切れて窓の ID が変わる**ことがある。ページを開いた後は 2 秒ほど待つ。
+- **EasyEDA の窓が最小化されている（`document.visibilityState` が hidden）と、画面の描画が止まる**。`screenshot.mjs` は古い画像を返し、
+  PNG・SVG の書き出しは 30 秒で打ち切られる。ネットリストの書き出しは動く。画像で確かめるときは人に窓を表示してもらう。
 
 ## 5. 守ること
 
